@@ -1,3 +1,5 @@
+task.wait(0.5)
+
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -7,26 +9,32 @@ local Camera = workspace.CurrentCamera
 local FOV_RADIUS = 30
 local isScriptActive, isRmbPressed, currentTargetPart = false, false, nil
 
--- Очистка прошлых подключений
-if _G.AimConnection then _G.AimConnection:Disconnect() end
-if _G.InputBeganConn then _G.InputBeganConn:Disconnect() end
-if _G.InputEndedConn then _G.InputEndedConn:Disconnect() end
-if _G.FOVCircle then _G.FOVCircle:Destroy() end
+pcall(function()
+    if _G.AimConnection then _G.AimConnection:Disconnect() end
+    if _G.InputBeganConn then _G.InputBeganConn:Disconnect() end
+    if _G.InputEndedConn then _G.InputEndedConn:Disconnect() end
+    if _G.PlayerAddedConn then _G.PlayerAddedConn:Disconnect() end
+    if _G.PlayerRemovingConn then _G.PlayerRemovingConn:Disconnect() end
+    if _G.FOVCircle then _G.FOVCircle:Destroy() end
 
-if _G.ESP_Storage then
-    for _, s in pairs(_G.ESP_Storage) do
-        pcall(function() 
-            s.HealthBar:Destroy(); s.HealthBG:Destroy(); s.NameText:Destroy()
-            if s.Corners then for _, line in pairs(s.Corners) do line:Destroy() end end
-            if s.Skeleton then for _, bone in pairs(s.Skeleton) do bone:Destroy() end end
-        end)
+    if _G.ESP_Storage then
+        for _, s in pairs(_G.ESP_Storage) do
+            pcall(function() 
+                s.Tracer:Destroy()
+                if s.Chams then s.Chams:Destroy() end
+                if s.Gui3D then s.Gui3D:Destroy() end
+            end)
+        end
     end
-end
+end)
+
 _G.ESP_Storage = {}
 
--- Круг FOV
 local FOVCircle = Drawing.new("Circle")
-FOVCircle.Visible, FOVCircle.Radius, FOVCircle.Color, FOVCircle.Thickness = false, FOV_RADIUS, Color3.fromRGB(0, 255, 0), 1
+FOVCircle.Visible = false
+FOVCircle.Radius = FOV_RADIUS
+FOVCircle.Color = Color3.fromRGB(0, 255, 0)
+FOVCircle.Thickness = 1
 _G.FOVCircle = FOVCircle
 
 local function isAlly(player)
@@ -57,95 +65,130 @@ local function getClosestTarget()
     return closest
 end
 
--- Скелет для R6 и R15
-local SkeletonRig = {
-    R6 = {
-        {"Head", "Torso"}, {"Torso", "Left Arm"}, {"Torso", "Right Arm"},
-        {"Torso", "Left Leg"}, {"Torso", "Right Leg"}
-    },
-    R15 = {
-        {"Head", "UpperTorso"}, {"UpperTorso", "LowerTorso"},
-        {"UpperTorso", "LeftUpperArm"}, {"LeftUpperArm", "LeftLowerArm"}, {"LeftLowerArm", "LeftHand"},
-        {"UpperTorso", "RightUpperArm"}, {"RightUpperArm", "RightLowerArm"}, {"RightLowerArm", "RightHand"},
-        {"LowerTorso", "LeftUpperLeg"}, {"LeftUpperLeg", "LeftLowerLeg"}, {"LeftLowerLeg", "LeftFoot"},
-        {"LowerTorso", "RightUpperLeg"}, {"RightUpperLeg", "RightLowerLeg"}, {"RightLowerLeg", "RightFoot"}
-    }
-}
+local function create3DGui(character, playerName)
+    local bb = Instance.new("BillboardGui")
+    bb.Size = UDim2.new(0, 150, 0, 30)
+    bb.AlwaysOnTop = true
+    bb.ExtentsOffset = Vector3.new(0, 3.5, 0)
+    bb.Enabled = false
+    
+    local head = character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart")
+    if head then bb.Adornee = head end
+    
+    local text = Instance.new("TextLabel")
+    text.Size = UDim2.new(1, 0, 0, 14)
+    text.BackgroundTransparency = 1
+    text.TextColor3 = Color3.fromRGB(255, 255, 255)
+    text.TextStrokeTransparency = 0
+    text.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    text.TextSize = 12
+    text.Font = Enum.Font.SourceSansBold
+    text.Text = playerName
+    text.Parent = bb
+    
+    local bg = Instance.new("Frame")
+    bg.Size = UDim2.new(0, 60, 0, 4)
+    bg.Position = UDim2.new(0.5, -30, 0, 16)
+    bg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    bg.BorderSizePixel = 0
+    bg.Parent = bb
+    
+    local bar = Instance.new("Frame")
+    bar.Size = UDim2.new(1, 0, 1, 0)
+    bar.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+    bar.BorderSizePixel = 0
+    bar.Parent = bg
+    
+    bb.Parent = game:GetService("CoreGui")
+    return bb, bar, text
+end
 
 local function initPlayerESP(player)
     if player == LocalPlayer then return end
     local function setup()
         if _G.ESP_Storage[player.UserId] then return end
         
-        -- Выделяем массив под 8 линий уголков
-        local cornerLines = {}
-        for i = 1, 8 do
-            local line = Drawing.new("Line")
-            line.Color = Color3.fromRGB(255, 0, 0)
-            line.Thickness = 1.5
-            line.Visible = false
-            table.insert(cornerLines, line)
-        end
+        local highlight = Instance.new("Highlight")
+        highlight.FillColor = Color3.fromRGB(255, 255, 255)
+        highlight.FillTransparency = 0.5
+        highlight.OutlineColor = Color3.fromRGB(255, 0, 0)
+        highlight.OutlineTransparency = 0
+        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        highlight.Enabled = false
 
-        local skeletonLines = {}
-        for i = 1, 15 do 
-            local line = Drawing.new("Line")
-            line.Color = Color3.fromRGB(255, 255, 255)
-            line.Thickness = 1.5
-            line.Visible = false
-            table.insert(skeletonLines, line)
+        local gui3d, bar3d, text3d = nil, nil, nil
+        if player.Character then
+            highlight.Parent = player.Character
+            gui3d, bar3d, text3d = create3DGui(player.Character, player.Name)
         end
 
         local s = {
-            Corners = cornerLines, HealthBG = Drawing.new("Square"), HealthBar = Drawing.new("Square"),
-            NameText = Drawing.new("Text"), Skeleton = skeletonLines
+            Tracer = Drawing.new("Line"),
+            Chams = highlight,
+            Gui3D = gui3d,
+            Bar3D = bar3d,
+            Text3D = text3d
         }
-        s.HealthBG.Color, s.HealthBG.Filled, s.HealthBG.Visible = Color3.fromRGB(0,0,0), true, false
-        s.HealthBar.Filled, s.HealthBar.Visible = true, false
-        s.NameText.Color, s.NameText.Size, s.NameText.Center, s.NameText.Outline, s.NameText.Visible = Color3.fromRGB(255, 255, 255), 14, true, true, false
+        
+        s.Tracer.Color, s.Tracer.Thickness, s.Tracer.Visible = Color3.fromRGB(255, 255, 255), 1, false
         
         _G.ESP_Storage[player.UserId] = s
     end
-    player.CharacterAdded:Connect(setup)
+    
+    player.CharacterAdded:Connect(function(char)
+        task.wait(0.2)
+        local s = _G.ESP_Storage[player.UserId]
+        if s then
+            if s.Chams then s.Chams.Parent = char end
+            if s.Gui3D then s.Gui3D:Destroy() end
+            local gui3d, bar3d, text3d = create3DGui(char, player.Name)
+            s.Gui3D = gui3d
+            s.Bar3D = bar3d
+            s.Text3D = text3d
+        end
+    end)
     setup()
+end
+
+local function removePlayerESP(player)
+    local s = _G.ESP_Storage[player.UserId]
+    if s then
+        pcall(function()
+            s.Tracer:Destroy()
+            if s.Chams then s.Chams:Destroy() end
+            if s.Gui3D then s.Gui3D:Destroy() end
+        end)
+        _G.ESP_Storage[player.UserId] = nil
+    end
 end
 
 for _, p in ipairs(Players:GetPlayers()) do initPlayerESP(p) end
 _G.PlayerAddedConn = Players.PlayerAdded:Connect(initPlayerESP)
+_G.PlayerRemovingConn = Players.PlayerRemoving:Connect(removePlayerESP)
 
--- Кнопки управления
 _G.InputBeganConn = UserInputService.InputBegan:Connect(function(i)
     if i.KeyCode == Enum.KeyCode.F1 then
         isScriptActive = not isScriptActive
         FOVCircle.Visible = isScriptActive
         if not isScriptActive then
             for _, s in pairs(_G.ESP_Storage) do 
-                s.HealthBG.Visible, s.HealthBar.Visible, s.NameText.Visible = false, false, false
-                for _, line in pairs(s.Corners) do line.Visible = false end
-                for _, line in pairs(s.Skeleton) do line.Visible = false end
+                s.Tracer.Visible = false
+                if s.Chams then s.Chams.Enabled = false end
+                if s.Gui3D then s.Gui3D.Enabled = false end
             end
             currentTargetPart = nil
         end
-    elseif i.UserInputType == Enum.UserInputType.MouseButton2 then isRmbPressed = true end
+    elseif i.UserInputType == Enum.UserInputType.MouseButton2 then 
+        isRmbPressed = true 
+    end
 end)
 
 _G.InputEndedConn = UserInputService.InputEnded:Connect(function(i)
-    if i.UserInputType == Enum.UserInputType.MouseButton2 then isRmbPressed, currentTargetPart = false, nil end
-end)
-
--- Фиксация метатаблиц от тряски
-local mt = getrawmetatable(game)
-local oldNewIndex = mt.__newindex
-setreadonly(mt, false)
-mt.__newindex = newcclosure(function(t, k, v)
-    if t == Camera and (k == "CFrame" or k == "CoordinateFrame" or k == "Focus") then
-        if isScriptActive and isRmbPressed and currentTargetPart then return end
+    if i.UserInputType == Enum.UserInputType.MouseButton2 then 
+        isRmbPressed, currentTargetPart = false, nil 
     end
-    return oldNewIndex(t, k, v)
 end)
-setreadonly(mt, true)
 
--- Основной цикл рендеринга
 _G.AimConnection = RunService.RenderStepped:Connect(function()
     FOVCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
     
@@ -153,56 +196,54 @@ _G.AimConnection = RunService.RenderStepped:Connect(function()
         local t = getClosestTarget()
         if t then 
             Camera.CFrame = CFrame.new(Camera.CFrame.Position, t.Position)
-            UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter 
+            UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
         end
-    else currentTargetPart = nil end
+    else 
+        currentTargetPart = nil 
+    end
 
-    for _, p in ipairs(Players:GetPlayers()) do
-        local s = _G.ESP_Storage[p.UserId]
-        if isScriptActive and s and p.Character and not isAlly(p) then
-            local r = p.Character:FindFirstChild("HumanoidRootPart") or p.Character:FindFirstChild("Head")
-            local h = p.Character:FindFirstChildOfClass("Humanoid")
-            
-            if r and h and h.Health > 0 then
-                local sPos, onScreen = Camera:WorldToViewportPoint(r.Position)
-                if onScreen then
-                    -- Расчет увеличенных габаритов
-                    local sc = 1 / (sPos.Z * 2) * 1000
-                    local w, hDim = 3.0 * sc, 5.2 * sc 
-                    local x, y = sPos.X - w / 2, sPos.Y - hDim / 2
-                    local cornerLength = w / 4 
+    pcall(function()
+        for _, p in ipairs(Players:GetPlayers()) do
+            local s = _G.ESP_Storage[p.UserId]
+            if isScriptActive and s and p.Character and not isAlly(p) then
+                local r = p.Character:FindFirstChild("HumanoidRootPart") or p.Character:FindFirstChild("Head")
+                local h = p.Character:FindFirstChildOfClass("Humanoid")
+                
+                if r and h and h.Health > 0 then
+                    if s.Chams then 
+                        if s.Chams.Parent ~= p.Character then s.Chams.Parent = p.Character end
+                        s.Chams.Enabled = true 
+                    end
                     
-                    -- Отрисовка уголков с корректными индексами линий [1] - [8]
-                    s.Corners[1].From, s.Corners[1].To, s.Corners[1].Visible = Vector2.new(x, y), Vector2.new(x + cornerLength, y), true
-                    s.Corners[2].From, s.Corners[2].To, s.Corners[2].Visible = Vector2.new(x, y), Vector2.new(x, y + cornerLength), true
-                    
-                    s.Corners[3].From, s.Corners[3].To, s.Corners[3].Visible = Vector2.new(x + w, y), Vector2.new(x + w - cornerLength, y), true
-                    s.Corners[4].From, s.Corners[4].To, s.Corners[4].Visible = Vector2.new(x + w, y), Vector2.new(x + w, y + cornerLength), true
-                    
-                    s.Corners[5].From, s.Corners[5].To, s.Corners[5].Visible = Vector2.new(x, y + hDim), Vector2.new(x + cornerLength, y + hDim), true
-                    s.Corners[6].From, s.Corners[6].To, s.Corners[6].Visible = Vector2.new(x, y + hDim), Vector2.new(x, y + hDim - cornerLength), true
-                    
-                    s.Corners[7].From, s.Corners[7].To, s.Corners[7].Visible = Vector2.new(x + w, y + hDim), Vector2.new(x + w - cornerLength, y + hDim), true
-                    s.Corners[8].From, s.Corners[8].To, s.Corners[8].Visible = Vector2.new(x + w, y + hDim), Vector2.new(x + w, y + hDim - cornerLength), true
+                    if s.Gui3D then 
+                        s.Gui3D.Enabled = true 
+                        local currentHp = math.floor(h.Health)
+                        local maxHp = math.floor(h.MaxHealth)
+                        local hpPercent = math.clamp(h.Health / h.MaxHealth, 0, 1)
+                        
+                        s.Text3D.Text = p.Name .. " [" .. currentHp .. "/" .. maxHp .. "]"
+                        s.Bar3D.Size = UDim2.new(hpPercent, 0, 1, 0)
+                        s.Bar3D.BackgroundColor3 = Color3.fromHSV(hpPercent * 0.33, 1, 1)
+                    end
 
-                    -- Здоровье
-                    s.HealthBG.Size, s.HealthBG.Position, s.HealthBG.Visible = Vector2.new(3, hDim), Vector2.new(x - 10, y), true
-                    local hp = math.clamp(h.Health / h.MaxHealth, 0, 1)
-                    s.HealthBar.Size, s.HealthBar.Position = Vector2.new(3, hDim * hp), Vector2.new(x - 10, y + (hDim - hDim * hp))
-                    s.HealthBar.Color, s.HealthBar.Visible = Color3.fromHSV(hp * 0.33, 1, 1), true
-                    
-                    s.NameText.Text, s.NameText.Position, s.NameText.Visible = p.Name, Vector2.new(sPos.X, y - 18), true
-                    
-                    -- Скелет персонажа
-                    local rigType = (h.RigType == Enum.HumanoidRigType.R6) and "R6" or "R15"
-                    local connections = SkeletonRig[rigType]
-                    
-                    for lineIdx, line in ipairs(s.Skeleton) do
-                        local conn = connections[lineIdx]
-                        if conn then
-                            local partA = p.Character:FindFirstChild(conn[1])
-                            local partB = p.Character:FindFirstChild(conn[2])
-                            
-                            if partA and partB then
-                                local posA, onScreenA = Camera:WorldToViewportPoint(partA.Position)
-Используйте код с осторожностью.local posB, onScreenB = Camera:WorldToViewportPoint(partB.Position)if onScreenA and onScreenB thenline.From = Vector2.new(posA.X, posA.Y)line.To = Vector2.new(posB.X, posB.Y)line.Visible = truetable.insert({}, 1)endendendif not line.Visible thenline.Visible = falseendendcontinueendendendif s thens.HealthBG.Visible, s.HealthBar.Visible, s.NameText.Visible = false, false, falsefor _, line in pairs(s.Corners) do line.Visible = false endfor _, line in pairs(s.Skeleton) do line.Visible = false endendendend)Players.PlayerRemoving:Connect(function(p)if _G.ESP_Storage[p.UserId] thenpcall(function()_G.ESP_Storage[p.UserId].HealthBar:Destroy(); _G.ESP_Storage[p.UserId].HealthBG:Destroy(); _G.ESP_Storage[p.UserId].NameText:Destroy()for _, line in pairs(_G.ESP_Storage[p.UserId].Corners) do line:Destroy() endfor _, line in pairs(_G.ESP_Storage[p.UserId].Skeleton) do line:Destroy() endend)_G.ESP_Storage[p.UserId] = nilendend)
+                    local sPos, onScreen = Camera:WorldToViewportPoint(r.Position)
+                    if onScreen then                   
+                        s.Tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                        s.Tracer.To = Vector2.new(sPos.X, sPos.Y)
+                        s.Tracer.Visible = true
+                    else
+                        s.Tracer.Visible = false
+                    end
+                else
+                    s.Tracer.Visible = false
+                    if s.Chams then s.Chams.Enabled = false end
+                    if s.Gui3D then s.Gui3D.Enabled = false end
+                end
+            elseif s then
+                s.Tracer.Visible = false
+                if s.Chams then s.Chams.Enabled = false end
+                if s.Gui3D then s.Gui3D.Enabled = false end
+            end
+        end
+    end)
+end)
