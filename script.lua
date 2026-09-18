@@ -7,7 +7,7 @@ local Camera = workspace.CurrentCamera
 local FOV_RADIUS = 30
 local isScriptActive, isRmbPressed, currentTargetPart = false, false, nil
 
--- Очистка старых сессий скрипта
+-- Очистка прошлых подключений
 if _G.AimConnection then _G.AimConnection:Disconnect() end
 if _G.InputBeganConn then _G.InputBeganConn:Disconnect() end
 if _G.InputEndedConn then _G.InputEndedConn:Disconnect() end
@@ -24,7 +24,7 @@ if _G.ESP_Storage then
 end
 _G.ESP_Storage = {}
 
--- Создание FOV круга аима
+-- Круг FOV
 local FOVCircle = Drawing.new("Circle")
 FOVCircle.Visible, FOVCircle.Radius, FOVCircle.Color, FOVCircle.Thickness = false, FOV_RADIUS, Color3.fromRGB(0, 255, 0), 1
 _G.FOVCircle = FOVCircle
@@ -57,7 +57,7 @@ local function getClosestTarget()
     return closest
 end
 
--- Скелетные структуры для R6 и R15
+-- Скелет для R6 и R15
 local SkeletonRig = {
     R6 = {
         {"Head", "Torso"}, {"Torso", "Left Arm"}, {"Torso", "Right Arm"},
@@ -77,7 +77,7 @@ local function initPlayerESP(player)
     local function setup()
         if _G.ESP_Storage[player.UserId] then return end
         
-        -- Ровно 8 линий для уголков (по 2 линии на каждый из 4 углов 2D-квадрата)
+        -- Выделяем массив под 8 линий уголков
         local cornerLines = {}
         for i = 1, 8 do
             local line = Drawing.new("Line")
@@ -113,7 +113,7 @@ end
 for _, p in ipairs(Players:GetPlayers()) do initPlayerESP(p) end
 _G.PlayerAddedConn = Players.PlayerAdded:Connect(initPlayerESP)
 
--- Обработка клавиш (Активация по F1, удержание на ПКМ)
+-- Кнопки управления
 _G.InputBeganConn = UserInputService.InputBegan:Connect(function(i)
     if i.KeyCode == Enum.KeyCode.F1 then
         isScriptActive = not isScriptActive
@@ -133,7 +133,7 @@ _G.InputEndedConn = UserInputService.InputEnded:Connect(function(i)
     if i.UserInputType == Enum.UserInputType.MouseButton2 then isRmbPressed, currentTargetPart = false, nil end
 end)
 
--- Обход тряски камеры через метатаблицы
+-- Фиксация метатаблиц от тряски
 local mt = getrawmetatable(game)
 local oldNewIndex = mt.__newindex
 setreadonly(mt, false)
@@ -145,7 +145,7 @@ mt.__newindex = newcclosure(function(t, k, v)
 end)
 setreadonly(mt, true)
 
--- Единый поток рендеринга (Aim, Boxes, Skeletons)
+-- Основной цикл рендеринга
 _G.AimConnection = RunService.RenderStepped:Connect(function()
     FOVCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
     
@@ -166,13 +166,13 @@ _G.AimConnection = RunService.RenderStepped:Connect(function()
             if r and h and h.Health > 0 then
                 local sPos, onScreen = Camera:WorldToViewportPoint(r.Position)
                 if onScreen then
-                    -- Размеры увеличенного бокса
+                    -- Расчет увеличенных габаритов
                     local sc = 1 / (sPos.Z * 2) * 1000
                     local w, hDim = 3.0 * sc, 5.2 * sc 
                     local x, y = sPos.X - w / 2, sPos.Y - hDim / 2
                     local cornerLength = w / 4 
                     
-                    -- Отрисовка уголков по индексам 1-8 (Корректное сопоставление)
+                    -- Отрисовка уголков с корректными индексами линий [1] - [8]
                     s.Corners[1].From, s.Corners[1].To, s.Corners[1].Visible = Vector2.new(x, y), Vector2.new(x + cornerLength, y), true
                     s.Corners[2].From, s.Corners[2].To, s.Corners[2].Visible = Vector2.new(x, y), Vector2.new(x, y + cornerLength), true
                     
@@ -185,7 +185,7 @@ _G.AimConnection = RunService.RenderStepped:Connect(function()
                     s.Corners[7].From, s.Corners[7].To, s.Corners[7].Visible = Vector2.new(x + w, y + hDim), Vector2.new(x + w - cornerLength, y + hDim), true
                     s.Corners[8].From, s.Corners[8].To, s.Corners[8].Visible = Vector2.new(x + w, y + hDim), Vector2.new(x + w, y + hDim - cornerLength), true
 
-                    -- Полоска здоровья
+                    -- Здоровье
                     s.HealthBG.Size, s.HealthBG.Position, s.HealthBG.Visible = Vector2.new(3, hDim), Vector2.new(x - 10, y), true
                     local hp = math.clamp(h.Health / h.MaxHealth, 0, 1)
                     s.HealthBar.Size, s.HealthBar.Position = Vector2.new(3, hDim * hp), Vector2.new(x - 10, y + (hDim - hDim * hp))
@@ -193,7 +193,7 @@ _G.AimConnection = RunService.RenderStepped:Connect(function()
                     
                     s.NameText.Text, s.NameText.Position, s.NameText.Visible = p.Name, Vector2.new(sPos.X, y - 18), true
                     
-                    -- Скелет
+                    -- Скелет персонажа
                     local rigType = (h.RigType == Enum.HumanoidRigType.R6) and "R6" or "R15"
                     local connections = SkeletonRig[rigType]
                     
@@ -204,4 +204,5 @@ _G.AimConnection = RunService.RenderStepped:Connect(function()
                             local partB = p.Character:FindFirstChild(conn[2])
                             
                             if partA and partB then
-Используйте код с осторожностью.local posA, onScreenA = Camera:WorldToViewportPoint(partA.Position)local posB, onScreenB = Camera:WorldToViewportPoint(partB.Position)if onScreenA and onScreenB thenline.From = Vector2.new(posA.X, posA.Y)line.To = Vector2.new(posB.X, posB.Y)line.Visible = truetable.insert({}, 1) -- Технический пропуск-- Заменяем некорректный continue на явное ветвлениеendendendif not line.Visible or not (p.Character:FindFirstChild(conn and conn[1] or "") and p.Character:FindFirstChild(conn and conn[2] or "")) thenline.Visible = falseendend-- Переход к следующему игрокуs.Corners[1].Visible = true -- Заглушка вместо continueendendendif s and (not isScriptActive or not p.Character or not p.Character:FindFirstChildOfClass("Humanoid") or p.Character:FindFirstChildOfClass("Humanoid").Health <= 0) thens.HealthBG.Visible, s.HealthBar.Visible, s.NameText.Visible = false, false, falsefor _, line in pairs(s.Corners) do line.Visible = false endfor _, line in pairs(s.Skeleton) do line.Visible = false endendendend)Players.PlayerRemoving:Connect(function(p)if _G.ESP_Storage[p.UserId] thenpcall(function()_G.ESP_Storage[p.UserId].HealthBar:Destroy(); _G.ESP_Storage[p.UserId].HealthBG:Destroy(); _G.ESP_Storage[p.UserId].NameText:Destroy()for _, line in pairs(_G.ESP_Storage[p.UserId].Corners) do line:Destroy() endfor _, line in pairs(_G.ESP_Storage[p.UserId].Skeleton) do line:Destroy() endend)_G.ESP_Storage[p.UserId] = nilendend)
+                                local posA, onScreenA = Camera:WorldToViewportPoint(partA.Position)
+Используйте код с осторожностью.local posB, onScreenB = Camera:WorldToViewportPoint(partB.Position)if onScreenA and onScreenB thenline.From = Vector2.new(posA.X, posA.Y)line.To = Vector2.new(posB.X, posB.Y)line.Visible = truetable.insert({}, 1)endendendif not line.Visible thenline.Visible = falseendendcontinueendendendif s thens.HealthBG.Visible, s.HealthBar.Visible, s.NameText.Visible = false, false, falsefor _, line in pairs(s.Corners) do line.Visible = false endfor _, line in pairs(s.Skeleton) do line.Visible = false endendendend)Players.PlayerRemoving:Connect(function(p)if _G.ESP_Storage[p.UserId] thenpcall(function()_G.ESP_Storage[p.UserId].HealthBar:Destroy(); _G.ESP_Storage[p.UserId].HealthBG:Destroy(); _G.ESP_Storage[p.UserId].NameText:Destroy()for _, line in pairs(_G.ESP_Storage[p.UserId].Corners) do line:Destroy() endfor _, line in pairs(_G.ESP_Storage[p.UserId].Skeleton) do line:Destroy() endend)_G.ESP_Storage[p.UserId] = nilendend)
